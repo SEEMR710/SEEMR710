@@ -1,3 +1,6 @@
+--THIS SCRIPT IS ABOUT THE COMBAT SYSTEM (Punches, heavy attacks etc.)
+
+
 --||Services||--
 local RS = game:GetService("ReplicatedStorage")
 local SS = game:GetService("ServerStorage")
@@ -86,9 +89,9 @@ local function Heavy_Attack(char,hum,toolName,action,trail,newHitbox,HeavyHitbox
 		HeavySound:Play()
 		Debris:AddItem(HeavySound,4)
 
-		VFX_Event:FireAllClients("HeavyAttack", char)
+		VFX_Event:FireAllClients("HeavyAttack", char) -- for that Kanji character above the players head
 
-		HeavyAnim.KeyframeReached:Connect(function(kf)
+		HeavyAnim.KeyframeReached:Connect(function(kf) -- same stuff as for the normal attacks
 			if kf == "Hit" then
 				char:SetAttribute("Attacking", false)
 
@@ -98,7 +101,7 @@ local function Heavy_Attack(char,hum,toolName,action,trail,newHitbox,HeavyHitbox
 
 		HeavyAnim.Stopped:Connect(function()  --when the animation stops
 			task.delay(.1,function() newHitbox:Destroy() end)
-			if HeavySound then task.delay(.3,function() HeavySound:Destroy() end) end 
+			if HeavySound then task.delay(.3,function() HeavySound:Destroy() end) end --destroy the heavy sound at the end of the animation to be able to continue attacking normaly
 			char:SetAttribute("Swing", false)
 			if char:FindFirstChild(toolName) and trail then  trail.Enabled = false end
 			if not char:GetAttribute("IsBlocking") then hum.WalkSpeed = 14 hum.JumpHeight = 6.5	 end			
@@ -122,7 +125,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 
 	if attacking or stunned or swing or isRagdoll or blocking or Heavy then return end
 
-	local WeaponStats = WeaponInfoModule:getweapon(toolName)
+	local WeaponStats = WeaponInfoModule:getweapon(toolName) --getting all the weapon stats, Located in -> ServerStorage -> Modules -> WeaponInfo
 	local Damage = WeaponStats.Damage	
 	local SwingReset = WeaponStats.SwingReset
 	local StunTime = WeaponStats.StunTime
@@ -131,7 +134,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 	local HeavyDamage = WeaponStats.HeavyDamage
 	local HeavyHitboxSize = WeaponStats.HeavyHitboxSize
 
-	Feinting(char,hum,action,toolName) 
+	Feinting(char,hum,action,toolName) --feinting function
 
 	char:SetAttribute("Attacking", true)
 	char:SetAttribute("Swing", true)
@@ -145,7 +148,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 	local ragdoll = false
 
 
-	local newHitbox = HitboxModule.CreateHitbox() 
+	local newHitbox = HitboxModule.CreateHitbox() --creating the hitbox
 	newHitbox.Size = HitboxSize
 	newHitbox.CFrame = hrp
 	newHitbox.Offset = HitboxOffset
@@ -161,7 +164,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 	end
 	--//
 
-	Heavy_Attack(char,hum,toolName,action,Trail,newHitbox,HeavyHitboxSize) 
+	Heavy_Attack(char,hum,toolName,action,Trail,newHitbox,HeavyHitboxSize) --heavy attack function
 
 	newHitbox.Touched:Connect(function(hit,enemyHum)
 		if enemyHum ~= hum then			
@@ -178,7 +181,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 			local center = (enemyHrp.Position - hrp.Position).Unit
 			local strength = 10
 
-			--enemyHrp.CFrame = CFrame.lookAt(enemyHrp.Position, hrp.Position)
+			--enemyHrp.CFrame = CFrame.lookAt(enemyHrp.Position, hrp.Position)--makes the enemy look at you, disabled it cuz it doesnt look good lol
 			ServerCombatModule.stopAnims(enemyHum)
 			local currCombo = char:GetAttribute("Combo")
 			if currCombo <= 4 and not isHeavyHit then
@@ -190,12 +193,13 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 					local tooth = game.ReplicatedStorage.Tooth:Clone()
 					tooth.Parent = game.Workspace
 					tooth.Position = enemyHum.Parent.Head.Position
+					game.Workspace.ToothSound:Play()
 				end
 			end
 
 			if currCombo == Max_Combo and not isHeavyHit then
 				ragdoll = false
-				strength = 43
+				strength = 25
 			end 
 
 			local kockback = center * strength
@@ -233,7 +237,7 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 			Hitbox_Start_Stop(char,newHitbox)
 		end
 
-		if char:GetAttribute("Combo") == Max_Combo then
+		if char:GetAttribute("Combo") == Max_Combo then --if the combo is the last hit then let him not attack for longer
 			task.wait(1) 
 		else
 			task.wait(SwingReset)
@@ -262,4 +266,5 @@ swingEvent.OnServerEvent:Connect(function(plr, action,toolName)
 	SwordSwingSound:Play()
 	Debris:AddItem(SwordSwingSound,1)
 end)
+
 
