@@ -89,7 +89,7 @@ local function Heavy_Attack(char,hum,toolName,action,trail,newHitbox,HeavyHitbox
 		HeavySound:Play()
 		Debris:AddItem(HeavySound,4)
 
-		VFX_Event:FireAllClients("HeavyAttack", char) -- for that Kanji character above the players head
+		VFX_Event:FireAllClients("HeavyAttack", char) -- for that skull icon character above the players head
 
 		HeavyAnim.KeyframeReached:Connect(function(kf) -- same stuff as for the normal attacks
 			if kf == "Hit" then
