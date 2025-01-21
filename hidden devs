@@ -1,5 +1,5 @@
 --THIS SCRIPT IS ABOUT THE COMBAT SYSTEM (Punches, heavy attacks etc.)
-
+--https://youtube.com/shorts/Oczi4Pp2RNY?si=6dHV7dcn9plMly-J  (a video about some skills made by me)
 
 --||Services||--
 local RS = game:GetService("ReplicatedStorage")
