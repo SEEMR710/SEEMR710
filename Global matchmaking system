@@ -1,0 +1,256 @@
+--this is a global matchmaking system.
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local MemoryService = game:GetService("MemoryStoreService")
+local TeleportService = game:GetService("TeleportService")
+local MessagingService = game:GetService("MessagingService")
+local HttpService = game:GetService("HttpService")
+local QueueStore = MemoryService:GetSortedMap("Queue")
+local JoinEvent = ReplicatedStorage:WaitForChild("MatchMaking"):WaitForChild("Player2"):FindFirstChild("Join")
+local LeaveEvent = ReplicatedStorage:WaitForChild("MatchMaking"):WaitForChild("Player2"):FindFirstChild("Leave")
+
+
+--check who joins the game. so we can collect they're userid
+game.Players.PlayerAdded:Connect(function(Player)
+	local character = Player.Character
+	warn("Player added: " .. Player.Name .. " (UserId: " .. Player.UserId .. ")")
+end)
+
+
+
+--MAIN QUEUE SYSTEM--
+
+local MatchedForTeleporting = {}  -- Table to store matched players waiting to be teleported
+local PlayerCooldowns = {}  -- Table to store players' cooldowns (7-second cooldown after being paired)
+
+local function updateQueue(newQueue)
+	local success, error = pcall(function()
+		QueueStore:SetAsync("1v1", newQueue, 500)
+	end)
+	if not success then
+		warn("Failed to update queue: " .. tostring(error))
+	end
+	return success
+end
+
+
+
+
+--check who joins the queue
+JoinEvent.OnServerEvent:Connect(function(Player: Player)
+	warn("Received JOIN SERVER event from " .. Player.Name .. " (UserId: " .. Player.UserId .. ")")
+	local newPlayerUserId = Player.UserId
+	-- Check if player is in cooldown (7 seconds cooldown after being paired)
+	if PlayerCooldowns[newPlayerUserId] and tick() - PlayerCooldowns[newPlayerUserId] < 7 then
+		-- The player is still in cooldown, so just stay in the queue and don't attempt to match them
+		JoinEvent:FireClient(Player, "Error", "You need to wait a bit before rejoining the queue.")
+		return
+	end
+
+
+
+	-- Check if player is in the MatchedForTeleporting table
+	if MatchedForTeleporting[tostring(newPlayerUserId)] then
+		
+		-- The player is already matched for teleportation, so don't pair them again
+		JoinEvent:FireClient(Player, "Error", "You're already matched for teleporting.")
+		return
+	end
+
+	-- Retrieve the queue from MemoryStore
+	local success, result = pcall(function()
+		
+		--for global matchmaking (cross server)
+		return QueueStore:GetAsync("1v1")
+	end)
+
+
+--if we have an error then:
+	if not success then
+		warn("Error retrieving queue: " .. tostring(result))
+		
+		--send an error message to them
+		JoinEvent:FireClient(Player, "Error", "SOMETHING WENT WRONG, PLEASE TRY AGAIN LATER.")
+		return
+	end
+
+
+--check the results so we can teleport them!
+	local queue = result or {}
+
+
+
+	-- Check if there's a player to match with
+	local matchedPlayer
+	for id, data in pairs(queue) do
+		-- Don't attempt to match if the player is in cooldown or already matched
+		if data["ID"] ~= newPlayerUserId and (not PlayerCooldowns[data["ID"]] or tick() - PlayerCooldowns[data["ID"]] >= 7) then
+			matchedPlayer = data
+			queue[id] = nil -- Remove matched player from the queue
+			break
+		end
+	end
+
+
+
+
+
+--if the players are found then:
+	if matchedPlayer then
+		-- Match found, pair them and teleport
+		warn("Match found! Player1: " .. matchedPlayer["ID"] .. ", Player2: " .. newPlayerUserId)
+		local dataTable = {
+			matchedPlayer["ID"],
+			newPlayerUserId,
+			TeleportService:ReserveServer(118060863102280)
+		}
+		local encodedData = HttpService:JSONEncode(dataTable)
+
+		local published, publishError = pcall(function()
+			MessagingService:PublishAsync("matchFound", encodedData)
+		end)
+
+		if not published then
+			warn("Error publishing matchFound message: " .. tostring(publishError))
+		else
+			print("Successfully published matchFound message.")
+		end
+
+		-- Add both players to the MatchedForTeleporting table
+		MatchedForTeleporting[tostring(matchedPlayer["ID"])] = true
+		MatchedForTeleporting[tostring(newPlayerUserId)] = true
+
+		-- Update the queue in MemoryStore
+		updateQueue(queue)
+		JoinEvent:FireClient(Player, "Success")
+	else
+		-- No match found, add player to the queue
+		warn("No match found. Adding player " .. Player.Name .. " (UserId: " .. Player.UserId .. ") to the queue.")
+
+		-- Wait for 1 second before adding the player to the queue
+		wait(1)
+		
+		
+		--lets ready up the players
+		queue[tostring(newPlayerUserId)] = { ID = newPlayerUserId }
+
+
+
+		if updateQueue(queue) then
+			print("Successfully added player to the queue.")
+			JoinEvent:FireClient(Player, "Success")
+		else
+			JoinEvent:FireClient(Player, "Error", "SOMETHING WENT WRONG, PLEASE TRY AGAIN LATER.")
+		end
+	end
+end)
+
+
+
+
+--if the player leaves the queue
+LeaveEvent.OnServerEvent:Connect(function(Player: Player)
+	warn("Received LEAVE SERVER event from " .. Player.Name .. " (UserId: " .. Player.UserId .. ")")
+	local newPlayerUserId = Player.UserId
+	local success, result = pcall(function()
+		return QueueStore:GetAsync("1v1")
+	end)
+
+	if not success then
+		warn("Error retrieving queue: " .. tostring(result))
+		LeaveEvent:FireClient(Player, "Error", "SOMETHING WENT WRONG.")
+		return
+	end
+
+	local queue = result or {}
+
+	if queue[tostring(newPlayerUserId)] then
+		warn("Player found in queue. Removing...")
+		queue[tostring(newPlayerUserId)] = nil
+
+		if updateQueue(queue) then
+			print("Successfully removed player from the queue.")
+			LeaveEvent:FireClient(Player, "Success")
+		else
+			LeaveEvent:FireClient(Player, "Error", "SOMETHING WENT WRONG.")
+		end
+	else
+		warn("Player not found in queue.")
+		LeaveEvent:FireClient(Player, "Error", "SOMETHING WENT WRONG.")
+	end
+end)
+
+
+--check if there are still 2 players
+MessagingService:SubscribeAsync("matchFound", function(Message)
+	warn("Received matchFound message: " .. tostring(Message.Data))
+	local decodedData = HttpService:JSONDecode(Message.Data)
+	warn("Decoded data: " .. tostring(decodedData))
+
+	local teleportOptions = Instance.new("TeleportOptions")
+	teleportOptions.ReservedServerAccessCode = decodedData[3]
+
+	local playersToTeleport = {}
+
+	for _, player in pairs(game.Players:GetPlayers()) do
+		if player.UserId == decodedData[1] or player.UserId == decodedData[2] then
+			warn("Adding player to teleport list: " .. player.Name .. " (UserId: " .. player.UserId .. ")")
+			table.insert(playersToTeleport, player)
+		end
+	end
+
+
+
+
+
+--check if there are 2 or more players to teleport
+	if #playersToTeleport == 2 then
+		local success, error = pcall(function()
+			TeleportService:TeleportToPrivateServer(118060863102280, decodedData[3], playersToTeleport, teleportOptions)
+		end)
+
+		if success then
+			--ReplicatedStorage:WaitForChild("MatchMaking"):WaitForChild("Player2"):FindFirstChild("Teleporting"):FireClient(decodedData[1], decodedData[2])
+			print("Successfully teleporting players to private server.")
+
+			-- Set a 5-second delay before removing players from MatchedForTeleporting
+			wait(5)
+			MatchedForTeleporting[tostring(decodedData[1])] = nil
+			MatchedForTeleporting[tostring(decodedData[2])] = nil
+
+			-- Set a cooldown for both players (7 seconds)
+			PlayerCooldowns[decodedData[1]] = tick()
+			PlayerCooldowns[decodedData[2]] = tick()
+
+		else
+			warn("Error teleporting players: " .. tostring(error))
+			--check who got an error
+		end
+	else
+		warn("Insufficient players for teleportation. Match canceled.")
+		--LeaveEvent:FireClient(Player, "Error", "Insufficient players for teleportation. Match canceled.")
+	end
+end)
+
+
+
+--if the player leaves the game remove him from the queue
+game.Players.PlayerRemoving:Connect(function(player)
+	warn("Player leaving: " .. player.Name .. " (UserId: " .. player.UserId .. ")")
+
+	-- Remove player from MatchedForTeleporting
+	MatchedForTeleporting[tostring(player.UserId)] = nil
+
+
+
+	-- Remove player from the queue if they are in it
+	local success, error = pcall(function()
+		QueueStore:RemoveAsync(tostring(player.UserId))
+	end)
+	
+	--check if he leaves the queue
+	if success then
+		print("Successfully removed player from the queue on leaving.")
+	else
+		warn("Error removing player from the queue on leaving: " .. tostring(error))
+	end
+end)
